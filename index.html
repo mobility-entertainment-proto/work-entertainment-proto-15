@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1e4fa8">
+<title>座席ガチャ</title>
+<style>
+  :root {
+    --primary: #1e4fa8;
+    --primary-dark: #173f88;
+    --text: #222;
+    --muted: #555;
+    --line: #8a8a8a;
+    --bg: #f5f5f5;
+    --footer: #ebebeb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* ヘッダー */
+  header {
+    background: var(--primary);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .icon-btn { background: none; border: 0; color: inherit; padding: 4px; cursor: pointer; display: flex; }
+  .brand { font-size: 24px; letter-spacing: .5px; flex: 1; }
+  .user-box { text-align: right; font-size: 14px; line-height: 1.4; min-width: 0; }
+  .user-box .email { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  .status { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .status .dot { width: 12px; height: 12px; border-radius: 50%; background: #6cc24a; border: 1px solid #fff; }
+
+  /* 本体 */
+  main { flex: 1; width: 100%; max-width: 480px; margin: 0 auto; padding: 32px 24px 40px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  h1 { font-size: 17px; font-weight: 500; text-align: center; margin: 24px 0 20px; }
+
+  .field { display: grid; grid-template-columns: 84px 1fr; align-items: end; gap: 12px; margin-bottom: 18px; }
+  .field label { text-align: right; font-size: 15px; padding-bottom: 6px; }
+  .field input, .field .value {
+    font: inherit; font-size: 15px; color: var(--text);
+    border: 0; border-bottom: 1px solid var(--line);
+    background: transparent; padding: 6px 0; width: 100%; min-width: 0;
+    border-radius: 0; outline: none;
+  }
+  .field input:focus { border-bottom: 2px solid var(--primary); padding-bottom: 5px; }
+  .field .value { word-break: break-all; }
+
+  .actions { margin-top: 40px; display: grid; gap: 14px; }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    font: inherit; font-size: 18px; height: 56px; border-radius: 4px; cursor: pointer;
+    border: 2px solid var(--primary); transition: background .15s, transform .05s;
+  }
+  .btn:active { transform: scale(.99); }
+  .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-outline { background: #fff; color: var(--primary); }
+  .btn-outline:hover { background: #eef3fc; }
+
+  /* 完了画面 */
+  .done-wrap { text-align: center; padding-top: 10px; }
+  .msg-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 0 0 14px; }
+  .msg-row .check { width: 32px; height: 32px; border-radius: 50%; background: var(--primary); display: inline-flex; align-items: center; justify-content: center; }
+  .msg-row h2 { font-size: 17px; font-weight: 600; margin: 0; }
+  .summary { background: #fff; border-radius: 6px; padding: 16px 20px; text-align: left; font-size: 14px; margin: 20px 0 24px; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .summary dl { display: grid; grid-template-columns: 84px 1fr; gap: 10px 12px; margin: 0; }
+  .summary dt { color: var(--muted); }
+  .summary dd { margin: 0; word-break: break-all; }
+  .stack { display: grid; gap: 12px; }
+
+  /* ガチャ */
+  .gacha { text-align: center; padding-top: 6px; }
+  .gacha h2 { font-size: 20px; margin: 0 0 4px; }
+  .gacha .sub { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .machine { width: 240px; height: 300px; margin: 0 auto; position: relative; }
+  .machine svg { width: 100%; height: 100%; overflow: visible; }
+  #knob2 { transform-box: fill-box; transform-origin: center; }
+  .spin #knob2 { animation: knob 1.2s ease-in-out; }
+  @keyframes knob { to { transform: rotate(540deg); } }
+  .spin #balls { animation: rattle .12s linear 10; transform-origin: 120px 90px; transform-box: view-box; }
+  @keyframes rattle { 0%,100% { transform: rotate(0); } 25% { transform: rotate(-3deg) translateY(-2px); } 75% { transform: rotate(3deg) translateY(1px); } }
+  #cap { opacity: 0; transform-origin: 0 0; }   /* 位置は外側の g、動きはこの g */
+  .drop #cap { animation: drop 1s cubic-bezier(.3,.7,.4,1) forwards; }
+  @keyframes drop { 0% { opacity: 1; transform: translate(0, -12px) scale(.5); } 45% { transform: translate(0, 6px) scale(1); } 70% { transform: translate(14px, 22px) rotate(170deg); } 85% { transform: translate(22px, 18px) rotate(260deg); } 100% { opacity: 1; transform: translate(30px, 24px) rotate(340deg); } }
+  .btn-spin { width: 100%; max-width: 320px; margin: 12px auto 0; background: linear-gradient(#ff7a59, #e8452f); border-color: #c0392b; color: #fff; font-weight: 800; box-shadow: 0 4px 0 #a5311f; }
+  .btn-spin:disabled { opacity: .6; box-shadow: none; transform: translateY(4px); }
+  .caption { min-height: 22px; font-weight: 700; color: #e8452f; margin-top: 10px; }
+
+  /* 結果の席 */
+  .ticket { position: relative; background: #fff; border-radius: 18px; box-shadow: 0 6px 20px rgba(0,0,0,.12); overflow: hidden; text-align: center; margin-bottom: 14px; animation: open .6s cubic-bezier(.2,1.6,.4,1); }
+  @keyframes open { from { transform: scale(.4) rotate(-8deg); opacity: 0; } }
+  .ticket .band { color: #fff; padding: 10px 14px; font-size: 13px; font-weight: 800; display: flex; justify-content: space-between; }
+  .ticket .seat { font-size: 64px; font-weight: 900; letter-spacing: 2px; line-height: 1.1; margin: 14px 0 0; font-variant-numeric: tabular-nums; }
+  .ticket .area { font-size: 15px; font-weight: 800; margin: 2px 0 2px; }
+  .ticket .area small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+  .ticket .order { margin: 12px 14px 14px; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 700; }
+  .ticket .badge { position: absolute; right: 12px; top: 44px; font-size: 11px; font-weight: 800; color: #fff; background: #e8452f; border-radius: 999px; padding: 3px 10px; transform: rotate(6deg); }
+  .card { background: #fff; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.07); text-align: left; padding: 12px 14px; margin-bottom: 14px; }
+  .card h3 { font-size: 14px; margin: 0 0 8px; display: flex; justify-content: space-between; align-items: baseline; }
+  .card h3 small { font-size: 11px; color: var(--muted); font-weight: 400; }
+  .map svg { width: 100%; display: block; }
+  .pin { animation: pinb 1s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 100%; }
+  @keyframes pinb { 50% { transform: translateY(-4px); } }
+  .ring { animation: ring 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes ring { from { transform: scale(.6); opacity: .9; } to { transform: scale(2.4); opacity: 0; } }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .hist { display: flex; gap: 6px; flex-wrap: wrap; }
+  .hist span { font-size: 12px; border-radius: 8px; padding: 4px 8px; background: #f2f4f8; }
+  .hist span b { color: #fff; border-radius: 4px; padding: 0 5px; margin-right: 4px; font-size: 11px; }
+  .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.6; }
+  .demo { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 4px; }
+  .demo button { background: none; border: 0; color: #999; font-size: 12px; text-decoration: underline; cursor: pointer; }
+  #confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; }
+
+  /* フッター */
+  footer { background: var(--footer); padding: 20px 20px calc(20px + env(safe-area-inset-bottom)); font-size: 14px; }
+  footer nav { display: flex; flex-wrap: wrap; gap: 8px 0; }
+  footer nav a { color: var(--primary); text-decoration: none; padding: 0 12px; border-left: 1px solid #999; }
+  footer nav a:first-child { border-left: 0; padding-left: 0; }
+  footer .copy { color: #888; text-align: center; margin-top: 16px; font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <button class="icon-btn" aria-label="メニュー">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </button>
+    <div class="brand">SEAT</div>
+    <div class="user-box">
+      <div class="email" id="headerUser"></div>
+      <div class="status">
+        <span class="dot"></span>テレワーク
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2z"/></svg>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- 入力画面 -->
+    <section class="screen active" id="screen-form">
+      <h1>在席退席登録</h1>
+      <div class="field">
+        <label for="card">カード番号</label>
+        <input id="card" type="text" inputmode="numeric" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>ユーザーID</label>
+        <div class="value" id="userId"></div>
+      </div>
+      <div class="field">
+        <label for="comment">コメント</label>
+        <input id="comment" type="text" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="datetime">日時</label>
+        <input id="datetime" type="datetime-local">
+      </div>
+      <div class="actions">
+        <button class="btn btn-primary" id="btnIn">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7 9.6 8.4l2.6 2.6H2v2h10.2l-2.6 2.6L11 17l5-5-5-5zm9 12h-8v2h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-8v2h8v14z"/></svg>
+          在席登録
+        </button>
+        <button class="btn btn-outline" id="btnOut">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="m17 7-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8v-2H4V5z"/></svg>
+          退席登録
+        </button>
+      </div>
+    </section>
+
+    <!-- ガチャ -->
+    <section class="screen" id="screen-gacha">
+      <div class="gacha">
+        <h2>今日の席を決めよう！</h2>
+        <p class="sub">ガチャを回すと、今日座る席が決まります</p>
+        <div class="machine" id="machine"><svg viewBox="0 0 240 300" xmlns="http://www.w3.org/2000/svg">
+          <defs><radialGradient id="glass" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#ffffff" stop-opacity=".9"/><stop offset="1" stop-color="#dff1ff" stop-opacity=".55"/></radialGradient></defs>
+          <ellipse cx="120" cy="292" rx="80" ry="7" fill="#000" opacity=".1"/>
+          <rect x="44" y="150" width="152" height="138" rx="16" fill="#e8452f"/>
+          <rect x="44" y="150" width="152" height="20" fill="#c0392b"/>
+          <rect x="80" y="176" width="80" height="22" rx="5" fill="#fff" opacity=".95"/>
+          <text x="120" y="192" font-size="13" font-weight="900" text-anchor="middle" fill="#e8452f" font-family="sans-serif" letter-spacing="2">SEAT</text>
+          <rect x="140" y="240" width="44" height="34" rx="8" fill="#7a1f12"/>
+                    <g id="balls">
+            <circle cx="120" cy="90" r="78" fill="url(#glass)" stroke="#9fc7e8" stroke-width="4"/>
+            <g><g transform="translate(112 119) rotate(333)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#3b82f6"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(169 114) rotate(48)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#8e44ad"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(113 111) rotate(259)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e67e22"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(123 116) rotate(214)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#16a085"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(132 107) rotate(217)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#f1c40f"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(158 114) rotate(114)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e74c3c"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(91 80) rotate(31)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#3b82f6"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(91 90) rotate(113)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#8e44ad"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(171 114) rotate(148)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e67e22"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(85 119) rotate(292)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#16a085"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(102 144) rotate(92)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#f1c40f"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(153 124) rotate(96)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e74c3c"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(92 128) rotate(32)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#3b82f6"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(80 89) rotate(254)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#8e44ad"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(105 80) rotate(160)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e67e22"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(66 111) rotate(185)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#16a085"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(104 144) rotate(357)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#f1c40f"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(122 96) rotate(153)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e74c3c"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(67 94) rotate(229)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#3b82f6"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(106 150) rotate(60)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#8e44ad"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(100 99) rotate(175)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e67e22"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(142 130) rotate(20)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#16a085"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(132 99) rotate(285)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#f1c40f"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(72 84) rotate(160)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#e74c3c"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(103 126) rotate(254)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#3b82f6"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g><g transform="translate(88 89) rotate(47)"><path d="M-12 0 a12 12 0 0 1 24 0z" fill="#8e44ad"/><path d="M-12 0 a12 12 0 0 0 24 0z" fill="#fff" stroke="#e5e5e5"/></g></g>
+            <ellipse cx="92" cy="54" rx="22" ry="12" fill="#fff" opacity=".6" transform="rotate(-30 92 54)"/>
+          </g>
+          <rect x="88" y="146" width="64" height="12" rx="4" fill="#9fc7e8"/>
+          <g transform="translate(90 242)"><circle r="22" fill="#fff" stroke="#c0392b" stroke-width="4"/><g id="knob2"><rect x="-4" y="-18" width="8" height="36" rx="4" fill="#c0392b"/></g></g>
+          <g transform="translate(162 254)"><g id="cap"><path d="M-14 0 a14 14 0 0 1 28 0z" id="capTop" fill="#3b82f6"/><path d="M-14 0 a14 14 0 0 0 28 0z" fill="#fff" stroke="#ddd"/></g></g>
+        </svg></div>
+        <div class="caption" id="caption"></div>
+        <button class="btn btn-spin" id="btnSpin">ガチャを回す！</button>
+      </div>
+    </section>
+
+    <!-- 完了画面 -->
+    <section class="screen" id="screen-done">
+      <div class="done-wrap">
+        <div class="msg-row"><span class="check"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z"/></svg></span><h2 id="doneTitle">在席登録が完了しました</h2></div>
+        <div id="result"></div>
+        <div class="summary">
+          <dl>
+            <dt>ユーザーID</dt><dd id="sumUser"></dd>
+            <dt>日時</dt><dd id="sumTime"></dd>
+            <dt>コメント</dt><dd id="sumComment"></dd>
+          </dl>
+        </div>
+        <div class="stack">
+          <button class="btn btn-outline" id="btnBack">戻る</button>
+          <div class="demo">
+            <button id="demoNextDay">次の日として引き直す（デモ）</button>
+            <button id="demoReset">履歴をリセット（デモ）</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <canvas id="confetti"></canvas>
+
+  <footer>
+    <nav>
+      <a href="#">利用規約</a>
+      <a href="#">プライバシーポリシー</a>
+      <a href="#">ウェブアクセシビリティ</a>
+    </nav>
+    <div class="copy">Prototype — 実際の登録は行われません</div>
+  </footer>
+
+<script>
+  const USER_ID = 'taro.yamada@example.com';
+  const $ = (id) => document.getElementById(id);
+
+  $('headerUser').textContent = USER_ID;
+  $('userId').textContent = USER_ID;
+
+  function nowLocal() {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  }
+  $('datetime').value = nowLocal();
+
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+    window.scrollTo(0, 0);
+  }
+
+  // ---- 座席ガチャ ----
+  const SEAT_KEY = 'seat15-v1';   // このプロト専用の保存名
+  const AREAS = [
+    { id: 'A', name: '窓側エリア',         note: '明るい窓ぎわの席',         color: '#3b82f6', bg: '#eaf2ff' },
+    { id: 'B', name: '集中エリア',         note: '静かに作業したい人向け',   color: '#8e44ad', bg: '#f4ecfa' },
+    { id: 'C', name: 'コラボエリア',       note: '相談しやすい大きな机',     color: '#e67e22', bg: '#fdf0e3' },
+    { id: 'D', name: 'リフレッシュ前エリア', note: 'カフェスペースのすぐそば', color: '#16a085', bg: '#e6f6f2' },
+  ];
+  const PER_AREA = 16, RECENT_BLOCK = 5;
+  const areaOf = (seat) => AREAS.find(a => a.id === seat[0]);
+  const pad = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  // 履歴（このブラウザ内にだけ保存）：[{ date, seat }]、新しい順
+  function loadHist() { try { const v = JSON.parse(localStorage.getItem(SEAT_KEY)); if (Array.isArray(v)) return v; } catch {} return []; }
+  let hist = loadHist();
+  function saveHist() { try { localStorage.setItem(SEAT_KEY, JSON.stringify(hist)); } catch {} }
+  let today = ymd(new Date());
+  const todaySeat = () => hist.find(h => h.date === today)?.seat;
+
+  // ほかの人がすでに座っている席（デモ）。日付ごとに決まった並びになる
+  function occupied(dateStr) {
+    let s = [...dateStr].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7);
+    const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+    const set = new Set();
+    AREAS.forEach(a => { for (let i = 1; i <= PER_AREA; i++) if (rnd() < .38) set.add(`${a.id}-${pad(i)}`); });
+    return set;
+  }
+  // 空き席から、最近座った席を除き、できれば前回と違うエリアを選ぶ
+  function drawSeat() {
+    const busy = occupied(today), recent = hist.slice(0, RECENT_BLOCK).map(h => h.seat);
+    const lastArea = hist[0]?.seat[0];
+    const all = AREAS.flatMap(a => [...Array(PER_AREA).keys()].map(i => `${a.id}-${pad(i + 1)}`));
+    let pool = all.filter(x => !busy.has(x) && !recent.includes(x));
+    const otherArea = pool.filter(x => x[0] !== lastArea);
+    if (otherArea.length) pool = otherArea;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // フロアマップ（A〜Dの4エリア × 16席）
+  function mapSVG(seat) {
+    const busy = occupied(today);
+    const W = 360, cell = 17, gap = 3;
+    let out = `<svg viewBox="0 0 ${W} 250" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="${W}" height="250" rx="10" fill="#f6f7fa"/>
+      <rect x="0" y="0" width="${W}" height="8" rx="4" fill="#9fc7e8"/><text x="${W / 2}" y="22" font-size="10" text-anchor="middle" fill="#7a8aa0">窓</text>
+      <rect x="${W / 2 - 40}" y="226" width="80" height="18" rx="4" fill="#e6f6f2"/><text x="${W / 2}" y="239" font-size="10" text-anchor="middle" fill="#16a085">☕ カフェ</text>`;
+    let pinXY = null;
+    AREAS.forEach((a, k) => {
+      const ox = 14 + (k % 2) * 176, oy = 32 + Math.floor(k / 2) * 98;
+      out += `<rect x="${ox - 6}" y="${oy - 6}" width="164" height="88" rx="8" fill="${a.bg}"/><text x="${ox}" y="${oy + 8}" font-size="11" font-weight="800" fill="${a.color}">${a.id} ${a.name}</text>`;
+      for (let i = 0; i < PER_AREA; i++) {
+        const id = `${a.id}-${pad(i + 1)}`, r = Math.floor(i / 8), c = i % 8;
+        const x = ox + c * (cell + gap), y = oy + 16 + r * (cell + 18);
+        const mine = id === seat, isBusy = busy.has(id);
+        out += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" rx="4" fill="${mine ? a.color : isBusy ? '#c9ced8' : '#fff'}" stroke="${mine ? a.color : '#d3d8e2'}" stroke-width="1.5"/>`;
+        if (mine) pinXY = [x + cell / 2, y];
+        if (r === 0) out += `<rect x="${x}" y="${y + cell + 3}" width="${cell}" height="10" rx="2" fill="#e2d4bf"/>`;
+      }
+    });
+    if (pinXY) {
+      const [px, py] = pinXY, a = areaOf(seat);
+      out += `<circle class="ring" cx="${px}" cy="${py + 8}" r="10" fill="none" stroke="${a.color}" stroke-width="3"/>
+        <g class="pin"><path d="M${px} ${py + 2} l-8 -12 a10 10 0 1 1 16 0z" fill="#e8452f"/><circle cx="${px}" cy="${py - 14}" r="4" fill="#fff"/></g>`;
+    }
+    return out + '</svg>';
+  }
+
+  function renderResult(kind, opts = {}) {
+    const seat = todaySeat(), a = areaOf(seat);
+    const prev = hist.find(h => h.date !== today);
+    const changed = prev && prev.seat[0] !== seat[0];
+    const isIn = kind === '在席';
+    const week = hist.slice(0, 7);
+    const areasThisWeek = new Set(week.map(h => h.seat[0])).size;
+    const histChips = hist.slice(0, 7).map(h => { const ar = areaOf(h.seat); return `<span><b style="background:${ar.color}">${h.date === today ? '今日' : h.date.slice(5).replace('-', '/')}</b>${h.seat}</span>`; }).join('');
+    $('result').innerHTML = `
+      <div class="ticket">
+        <div class="band" style="background:${a.color}"><span>${isIn ? '今日のあなたの席' : '今日の席'}</span><span>${today.slice(5).replace('-', '/')}</span></div>
+        ${isIn && changed ? '<span class="badge">前回とちがうエリア！</span>' : ''}
+        <div class="seat" style="color:${a.color}">${seat}</div>
+        <div class="area">${a.id} ${a.name}<small>${a.note}</small></div>
+        <div class="order" style="background:${a.bg};color:${a.color}">${isIn ? (opts.already ? '今日の席はもう決まっています。この席に座ってください。' : '今日はこの席に座ってください！') : 'おつかれさまでした。席を片づけて、次の人のために空けて帰りましょう。'}</div>
+      </div>
+      <div class="card map"><h3>フロアマップ<small>グレーはほかの人が利用中（デモ）</small></h3>${mapSVG(seat)}
+        <div class="legend"><span><i style="background:${a.color}"></i>あなたの席</span><span><i style="background:#fff;border:1px solid #d3d8e2"></i>空き</span><span><i style="background:#c9ced8"></i>利用中</span></div></div>
+      <div class="card"><h3>最近座った席<small>${isIn ? `前回：${prev ? `${prev.seat}（${areaOf(prev.seat).name}）` : 'はじめて'}` : `この1週間で ${areasThisWeek} / ${AREAS.length} エリア`}</small></h3>
+        <div class="hist">${histChips}</div>
+        <p class="note">席が固定されないよう、最近座った${RECENT_BLOCK}席は出ないしくみです。いろいろなエリアで、いろいろな人と働きましょう。</p></div>`;
+  }
+
+  function fillSummary(kind) {
+    const dt = $('datetime').value || nowLocal();
+    $('doneTitle').textContent = `${kind}登録が完了しました`;
+    $('sumUser').textContent = USER_ID;
+    $('sumTime').textContent = dt.replace('T', ' ').replace(/-/g, '/');
+    $('sumComment').textContent = $('comment').value || '—';
+  }
+  function register(kind) {
+    fillSummary(kind);
+    if (kind === '在席' && !todaySeat()) {
+      $('machine').className = 'machine';
+      $('caption').textContent = '';
+      $('btnSpin').disabled = false;
+      show('screen-gacha');
+      return;
+    }
+    if (!todaySeat()) {   // 在席せずに退席したときは、席の情報なし
+      $('result').innerHTML = '<div class="card"><h3>今日の席</h3><p class="note">今日はまだ座席ガチャを回していません。</p></div>';
+    } else {
+      renderResult(kind, { already: kind === '在席' });
+    }
+    show('screen-done');
+  }
+
+  $('btnSpin').addEventListener('click', () => {
+    const seat = drawSeat();
+    $('btnSpin').disabled = true;
+    $('caption').textContent = 'ガチャガチャ…';
+    document.getElementById('capTop').setAttribute('fill', areaOf(seat).color);
+    $('machine').classList.add('spin');
+    setTimeout(() => { $('machine').classList.add('drop'); $('caption').textContent = 'コロン！'; }, 1200);
+    setTimeout(() => {
+      hist.unshift({ date: today, seat });
+      hist = hist.slice(0, 30);
+      saveHist();
+      renderResult('在席');
+      show('screen-done');
+      confetti();
+    }, 2500);
+  });
+
+  function confetti() {
+    const cv = $('confetti'), ctx = cv.getContext('2d');
+    cv.width = innerWidth; cv.height = innerHeight;
+    const colors = AREAS.map(a => a.color).concat('#f1c40f', '#e8452f');
+    const ps = Array.from({ length: 140 }, () => ({ x: Math.random() * cv.width, y: -20 - Math.random() * cv.height * .4, w: 6 + Math.random() * 6, h: 8 + Math.random() * 8, vy: 2 + Math.random() * 3, vx: -1.5 + Math.random() * 3, r: Math.random() * 3, vr: -.2 + Math.random() * .4, c: colors[Math.floor(Math.random() * colors.length)] }));
+    const start = performance.now();
+    (function frame(t) {
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      for (const p of ps) { p.x += p.vx; p.y += p.vy; p.r += p.vr; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.c; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r))); ctx.restore(); }
+      if (t - start < 3500) requestAnimationFrame(frame); else ctx.clearRect(0, 0, cv.width, cv.height);
+    })(start);
+  }
+
+  // デモ：履歴の日付を1日ずつ前にずらして、今日をもう一度引けるようにする
+  $('demoNextDay').addEventListener('click', () => {
+    hist = hist.map(h => { const d = new Date(h.date + 'T00:00:00'); d.setDate(d.getDate() - 1); return { ...h, date: ymd(d) }; });
+    saveHist();
+    register('在席');
+  });
+  $('demoReset').addEventListener('click', () => {
+    if (!confirm('座席の履歴をリセットしますか？')) return;
+    hist = []; saveHist(); register('在席');
+  });
+
+  $('btnIn').addEventListener('click', () => register('在席'));
+  $('btnOut').addEventListener('click', () => register('退席'));
+  $('btnBack').addEventListener('click', () => {
+    $('datetime').value = nowLocal();
+    show('screen-form');
+  });
+</script>
+</body>
+</html>
